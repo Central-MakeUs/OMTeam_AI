@@ -1,17 +1,22 @@
 """
-LangGraph 기반 에이전트 오케스트레이션 시스템 (Langfuse full tracing 버전)
+LangGraph 기반 에이전트 오케스트레이션 시스템 (LangSmith tracing/sampling 버전)
 
 요구사항 반영:
-1) Langfuse 추천 및 적용 (전체 tracing)
-2) 그래프/노드/LLM 호출까지 end-to-end tracing
-3) 노드 단위 관측 강화(메타데이터/태깅 + 노드 이벤트 기록 옵션)
+1) LangSmith 적용 (샘플링/에러 우선 수집)
+2) 그래프/노드/LLM 호출까지 correlation 유지
+3) 메타데이터/태깅 표준화
 4) 타입/상태/메시지 처리 정리
 
 환경변수 (.env 권장)
 - UPSTAGE_API_KEY=...
-- LANGFUSE_PUBLIC_KEY=pk-lf-...
-- LANGFUSE_SECRET_KEY=sk-lf-...
-- LANGFUSE_BASE_URL=https://cloud.langfuse.com   # 또는 셀프호스트 URL
+- LANGCHAIN_TRACING_V2=true
+- LANGCHAIN_API_KEY=lsv2_...                     # LangSmith API key
+- LANGCHAIN_PROJECT=...                          # LangSmith project
+- LANGSMITH_TRACING=true                         # 구버전 호환
+- LANGSMITH_API_KEY=lsv2_...                     # 구버전 호환
+- LANGSMITH_PROJECT=...                          # 구버전 호환
+- TRACE_SAMPLE_RATE=0.1                          # prod 샘플링 비율(선택)
+- TRACE_ALLOW_PII=false                          # PII 포함 시 tracing off (선택)
 - APP_ENV=dev|stg|prod (선택)
 - GIT_SHA=... (선택)
 """
@@ -24,6 +29,8 @@ from dotenv import load_dotenv
 import os
 import time
 import uuid
+import threading
+import random
 
 from langchain_upstage import ChatUpstage
 from langchain_core.messages import (
@@ -35,27 +42,35 @@ from langchain_core.messages import (
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END
 
-# Langfuse (LangChain callback)
+# LangSmith (LangChain tracer)
 try:
-    # 최신/일반적인 경로
-    from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler  # type: ignore
+    from langchain.callbacks.tracers.langchain import LangChainTracer
 except Exception:
-    try:
-        # 구버전 호환
-        from langfuse.callback import CallbackHandler as LangfuseCallbackHandler  # type: ignore
-    except Exception:
-        LangfuseCallbackHandler = None  # type: ignore
-
-# 선택: 노드 이벤트를 Langfuse에 직접 남기고 싶다면(권장)
-try:
-    from langfuse import Langfuse  # type: ignore
-except Exception:
-    Langfuse = None  # type: ignore
+    LangChainTracer = None
 
 # -----------------------------------------------------------------------------
 # Load env
 # -----------------------------------------------------------------------------
 load_dotenv()
+
+
+def _ensure_langsmith_env_aliases() -> None:
+    """LANGSMITH_* 환경변수를 LANGCHAIN_*로 보정."""
+    if os.environ.get("LANGCHAIN_API_KEY") is None:
+        langsmith_key = os.environ.get("LANGSMITH_API_KEY")
+        if langsmith_key:
+            os.environ["LANGCHAIN_API_KEY"] = langsmith_key
+    if os.environ.get("LANGCHAIN_PROJECT") is None:
+        langsmith_project = os.environ.get("LANGSMITH_PROJECT")
+        if langsmith_project:
+            os.environ["LANGCHAIN_PROJECT"] = langsmith_project
+    if os.environ.get("LANGCHAIN_TRACING_V2") is None:
+        langsmith_tracing = os.environ.get("LANGSMITH_TRACING")
+        if langsmith_tracing:
+            os.environ["LANGCHAIN_TRACING_V2"] = langsmith_tracing
+
+
+_ensure_langsmith_env_aliases()
 
 # -----------------------------------------------------------------------------
 # Constants / Prompts
@@ -89,9 +104,10 @@ ORCHESTRATOR_SYSTEM_PROMPT = """당신은 사용자의 요청을 분석하여 �
 """
 
 # -----------------------------------------------------------------------------
-# In-memory personalization store (MVP) - 운영 리스크는 다음 단계에서 개선
+# In-memory personalization store (MVP) - 멀티워커/멀티프로세스에서는 불안정
 # -----------------------------------------------------------------------------
 _USER_STORE: Dict[str, Dict[str, Any]] = {}
+_USER_STORE_LOCK = threading.Lock()
 _MAX_USER_EVENTS = 30
 _USER_TTL_SECONDS = 60 * 60 * 24 * 14  # 14 days
 
@@ -101,25 +117,27 @@ def _now_ts() -> float:
 
 
 def _prune_expired_user(user_id: str) -> None:
-    record = _USER_STORE.get(user_id)
-    if not record:
-        return
-    if _now_ts() - record.get("updated_at", 0) > _USER_TTL_SECONDS:
-        _USER_STORE.pop(user_id, None)
+    with _USER_STORE_LOCK:
+        record = _USER_STORE.get(user_id)
+        if not record:
+            return
+        if _now_ts() - record.get("updated_at", 0) > _USER_TTL_SECONDS:
+            _USER_STORE.pop(user_id, None)
 
 
 def _ensure_user_record(user_id: str) -> Dict[str, Any]:
     _prune_expired_user(user_id)
-    record = _USER_STORE.get(user_id)
-    if record is None:
-        record = {
-            "preferences": {},
-            "events": [],
-            "stats": {"success": 0, "fail": 0},
-            "updated_at": _now_ts(),
-        }
-        _USER_STORE[user_id] = record
-    return record
+    with _USER_STORE_LOCK:
+        record = _USER_STORE.get(user_id)
+        if record is None:
+            record = {
+                "preferences": {},
+                "events": [],
+                "stats": {"success": 0, "fail": 0},
+                "updated_at": _now_ts(),
+            }
+            _USER_STORE[user_id] = record
+        return record
 
 
 def update_user_context(user_id: str, payload: Optional[Dict[str, Any]]) -> None:
@@ -127,26 +145,27 @@ def update_user_context(user_id: str, payload: Optional[Dict[str, Any]]) -> None
     if not user_id:
         return
     record = _ensure_user_record(user_id)
-    if not payload:
+    with _USER_STORE_LOCK:
+        if not payload:
+            record["updated_at"] = _now_ts()
+            return
+
+        preferences = payload.get("preferences") or {}
+        if isinstance(preferences, dict):
+            record["preferences"].update(preferences)
+
+        event = payload.get("event")
+        if isinstance(event, dict):
+            event = {**event, "ts": _now_ts()}
+            record["events"].append(event)
+            record["events"] = record["events"][-_MAX_USER_EVENTS:]
+
+            if event.get("mission_result") == "success":
+                record["stats"]["success"] += 1
+            elif event.get("mission_result") == "fail":
+                record["stats"]["fail"] += 1
+
         record["updated_at"] = _now_ts()
-        return
-
-    preferences = payload.get("preferences") or {}
-    if isinstance(preferences, dict):
-        record["preferences"].update(preferences)
-
-    event = payload.get("event")
-    if isinstance(event, dict):
-        event = {**event, "ts": _now_ts()}
-        record["events"].append(event)
-        record["events"] = record["events"][-_MAX_USER_EVENTS:]
-
-        if event.get("mission_result") == "success":
-            record["stats"]["success"] += 1
-        elif event.get("mission_result") == "fail":
-            record["stats"]["fail"] += 1
-
-    record["updated_at"] = _now_ts()
 
 
 def summarize_user_context(user_id: Optional[str]) -> str:
@@ -154,13 +173,14 @@ def summarize_user_context(user_id: Optional[str]) -> str:
     if not user_id:
         return ""
     _prune_expired_user(user_id)
-    record = _USER_STORE.get(user_id)
-    if not record:
-        return ""
+    with _USER_STORE_LOCK:
+        record = _USER_STORE.get(user_id)
+        if not record:
+            return ""
 
-    prefs = record.get("preferences", {})
-    events = record.get("events", [])
-    stats = record.get("stats", {})
+        prefs = record.get("preferences", {})
+        events = list(record.get("events", []))
+        stats = dict(record.get("stats", {}))
 
     recent = events[-3:] if events else []
     recent_strs: List[str] = []
@@ -200,7 +220,7 @@ def build_context_message(user_context_summary: str) -> Optional[SystemMessage]:
 
 
 # -----------------------------------------------------------------------------
-# Tracing: Langfuse callbacks + optional node event logger
+# Tracing: LangSmith callbacks
 # -----------------------------------------------------------------------------
 @dataclass(frozen=True)
 class TraceContext:
@@ -219,76 +239,65 @@ def _get_env_first(*keys: str) -> Optional[str]:
     return None
 
 
-def build_langfuse_callback() -> Optional[object]:
-    """Langfuse LangChain callback 구성 (LLM 스팬 자동 생성)."""
-    if LangfuseCallbackHandler is None:
-        return None
+def _parse_sample_rate(app_env: str) -> float:
+    raw = os.environ.get("TRACE_SAMPLE_RATE")
+    if raw:
+        try:
+            rate = float(raw)
+            return max(0.0, min(1.0, rate))
+        except ValueError:
+            pass
+    return 0.2 if app_env == "prod" else 1.0
 
-    pk = _get_env_first("LANGFUSE_PUBLIC_KEY")
-    sk = _get_env_first("LANGFUSE_SECRET_KEY")
-    if not pk or not sk:
-        return None
 
-    base_url = _get_env_first("LANGFUSE_BASE_URL", "LANGFUSE_HOST")  # HOST 호환
+def should_trace_request(app_env: str, user_context_summary: str) -> bool:
+    allow_pii = os.environ.get("TRACE_ALLOW_PII", "").lower() in {"true", "1", "yes"}
+    if user_context_summary and not allow_pii:
+        return False
+    return random.random() < _parse_sample_rate(app_env)
+
+
+def _langsmith_tracing_enabled() -> bool:
+    return _get_env_first("LANGCHAIN_TRACING_V2", "LANGSMITH_TRACING") in {"true", "1", "yes", "True"}
+
+
+def _langsmith_project() -> Optional[str]:
+    return _get_env_first("LANGCHAIN_PROJECT", "LANGSMITH_PROJECT")
+
+
+_CACHED_LANGSMITH_TRACER: Optional[object] = None
+
+
+def get_langsmith_tracer() -> Optional[object]:
+    global _CACHED_LANGSMITH_TRACER
+    if _CACHED_LANGSMITH_TRACER is not None:
+        return _CACHED_LANGSMITH_TRACER
+    if not _langsmith_tracing_enabled() or LangChainTracer is None:
+        return None
+    project = _langsmith_project() or "omteam"
     try:
-        if base_url:
-            return LangfuseCallbackHandler(public_key=pk, secret_key=sk, host=base_url)
-        return LangfuseCallbackHandler(public_key=pk, secret_key=sk)
+        _CACHED_LANGSMITH_TRACER = LangChainTracer(project_name=project)
     except Exception:
-        return None
+        _CACHED_LANGSMITH_TRACER = None
+    return _CACHED_LANGSMITH_TRACER
 
 
-def build_callbacks() -> List[object]:
-    cb = build_langfuse_callback()
-    return [cb] if cb else []
+def build_callbacks(trace_enabled: bool) -> List[object]:
+    if not trace_enabled:
+        return []
+    tracer = get_langsmith_tracer()
+    return [tracer] if tracer else []
 
 
-def build_node_event_logger() -> Optional[object]:
-    """
-    선택: 노드 시작/종료를 Langfuse에 명시적으로 기록.
-    - LangChain callback만으로도 LLM 호출은 찍히지만,
-      노드/라우팅 이벤트를 강하게 남기고 싶으면 Langfuse SDK를 같이 사용.
-    """
-    if Langfuse is None:
-        return None
-    pk = _get_env_first("LANGFUSE_PUBLIC_KEY")
-    sk = _get_env_first("LANGFUSE_SECRET_KEY")
-    if not pk or not sk:
-        return None
-    base_url = _get_env_first("LANGFUSE_BASE_URL", "LANGFUSE_HOST")
-    try:
-        if base_url:
-            return Langfuse(public_key=pk, secret_key=sk, host=base_url)
-        return Langfuse(public_key=pk, secret_key=sk)
-    except Exception:
-        return None
-
-
-_NODE_LOGGER = build_node_event_logger()
-
-
-def node_event(name: str, stage: Literal["start", "end", "error"], tc: TraceContext, extra: Dict[str, Any]) -> None:
-    """노드 단위 이벤트 기록(옵션). 실패해도 서비스 동작에 영향 없게."""
-    if _NODE_LOGGER is None:
-        return
-    try:
-        # event API는 버전에 따라 다를 수 있어, 가장 보수적으로 trace/metadata 수준만 기록.
-        # 여기서는 "event" 메서드가 있다고 가정하지 않고, observation 기반으로 남김.
-        # Langfuse SDK가 제공하는 최소 인터페이스가 다르면 이 부분은 다음 단계에서 맞춰 조정.
-        _NODE_LOGGER.log_event(  # type: ignore[attr-defined]
-            name=f"node.{name}.{stage}",
-            metadata={
-                "request_id": tc.request_id,
-                "thread_id": tc.thread_id,
-                "user_id": tc.user_id,
-                "env": tc.app_env,
-                "git_sha": tc.git_sha,
-                **extra,
-            },
-        )
-    except Exception:
-        # SDK 호환 이슈가 있을 수 있어, 운영 단계에서 맞추는 게 안전
-        return
+def node_event(
+    name: str,
+    stage: Literal["start", "end", "error"],
+    tc: TraceContext,
+    extra: Dict[str, Any],
+    trace_enabled: bool,
+) -> None:
+    """LangSmith는 노드 이벤트를 별도로 기록하지 않음."""
+    return
 
 
 # -----------------------------------------------------------------------------
@@ -306,7 +315,6 @@ def get_llm() -> ChatUpstage:
         _CACHED_LLM = ChatUpstage(
             model="solar-pro2",
             upstage_api_key=api_key,
-            callbacks=build_callbacks(),  # 콜백은 여기만
         )
     return _CACHED_LLM
 
@@ -328,6 +336,7 @@ class AgentState(TypedDict):
     thread_id: str
     app_env: str
     git_sha: str
+    trace_enabled: bool
 
 
 def validate_user_request(user_request: str) -> Optional[str]:
@@ -378,13 +387,13 @@ def _trace_context_from_state(state: AgentState) -> TraceContext:
 def _llm_config_from_state(state: AgentState, node_name: str) -> RunnableConfig:
     """
     핵심: LangGraph 실행과 LLM 호출을 같은 correlation key로 묶기 위한 config.
-    - callbacks: Langfuse (LLM tracing)
+    - callbacks: LangSmith (LLM tracing)
     - tags/metadata: 노드 단위 관측용 필터링 키
     """
     return cast(
         RunnableConfig,
         {
-            "callbacks": build_callbacks(),
+            "callbacks": build_callbacks(state["trace_enabled"]),
             "tags": [state["app_env"], f"node:{node_name}"],
             "metadata": {
                 "request_id": state["request_id"],
@@ -409,7 +418,7 @@ def orchestrator_node(state: AgentState) -> AgentState:
     user_request = state.get("user_request") or _extract_last_human(state["messages"])
     tc = _trace_context_from_state(state)
 
-    node_event("orchestrator", "start", tc, {"user_request_len": len(user_request)})
+    node_event("orchestrator", "start", tc, {"user_request_len": len(user_request)}, state["trace_enabled"])
 
     messages: List[BaseMessage] = [SystemMessage(content=ORCHESTRATOR_SYSTEM_PROMPT)]
     ctx_msg = build_context_message(state.get("user_context_summary", ""))
@@ -429,11 +438,11 @@ def orchestrator_node(state: AgentState) -> AgentState:
         resp = get_llm().invoke(messages, config=_llm_config_from_state(state, "orchestrator"))
         selected = _normalize_agent_choice(resp.content, user_request)
     except Exception as exc:
-        # full tracing은 Langfuse가 수행하므로, 여기서는 상태만 안정적으로 처리
+        # tracing은 LangSmith가 수행하므로, 여기서는 상태만 안정적으로 처리
         selected = _normalize_agent_choice("", user_request)
-        node_event("orchestrator", "error", tc, {"error": type(exc).__name__})
+        node_event("orchestrator", "error", tc, {"error": type(exc).__name__}, state["trace_enabled"])
 
-    node_event("orchestrator", "end", tc, {"selected_agent": selected})
+    node_event("orchestrator", "end", tc, {"selected_agent": selected}, state["trace_enabled"])
 
     return {
         **state,
@@ -452,7 +461,7 @@ def _agent_node_common(
     user_request = state.get("user_request") or _extract_last_human(state["messages"])
     tc = _trace_context_from_state(state)
 
-    node_event(node_name, "start", tc, {"user_request_len": len(user_request)})
+    node_event(node_name, "start", tc, {"user_request_len": len(user_request)}, state["trace_enabled"])
 
     messages: List[BaseMessage] = [SystemMessage(content=system_prompt)]
     ctx_msg = build_context_message(state.get("user_context_summary", ""))
@@ -463,10 +472,10 @@ def _agent_node_common(
     try:
         resp = get_llm().invoke(messages, config=_llm_config_from_state(state, node_name))
         agent_response = resp.content
-        node_event(node_name, "end", tc, {"status": "success"})
+        node_event(node_name, "end", tc, {"status": "success"}, state["trace_enabled"])
     except Exception as exc:
         agent_response = build_error_response()
-        node_event(node_name, "error", tc, {"error": type(exc).__name__})
+        node_event(node_name, "error", tc, {"error": type(exc).__name__}, state["trace_enabled"])
 
     return {
         **state,
@@ -584,6 +593,7 @@ def run_agent_system(
     git_sha = os.environ.get("GIT_SHA", "unknown")
 
     user_context_summary = summarize_user_context(user_id)
+    trace_enabled = should_trace_request(app_env, user_context_summary)
 
     initial_state: AgentState = {
         "messages": [HumanMessage(content=user_request)],
@@ -597,6 +607,7 @@ def run_agent_system(
         "thread_id": thread_id,
         "app_env": app_env,
         "git_sha": git_sha,
+        "trace_enabled": trace_enabled,
     }
 
     graph = get_agent_graph()
@@ -605,7 +616,7 @@ def run_agent_system(
     graph_config: RunnableConfig = cast(
         RunnableConfig,
         {
-            "callbacks": build_callbacks(),
+            "callbacks": build_callbacks(trace_enabled),
             "tags": [app_env, "graph:agent_orchestration"],
             "metadata": {
                 "request_id": request_id,

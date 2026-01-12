@@ -640,7 +640,7 @@ def run_agent_system(
 # Local test
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
-    test_request = "내년 프로젝트를 위한 6개월 로드맵을 만들어줘"
+    test_request = "살뺴고 싶어. 어떻게 하면 6개월 내에 내가 원하는 목표까지 포기하지 않고 건강하게 체중을 감량할 수 있을까?"
     print(f"사용자 요청: {test_request}\n")
 
     result = run_agent_system(test_request, user_id="demo_user_1")

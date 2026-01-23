@@ -151,6 +151,7 @@ class ChatInput(BaseModel):
 
 class ChatMessageRequest(BaseModel):
     sessionId: int
+    userId: int
     input: ChatInput
     timestamp: datetime # Use datetime for ISO-8601 string
 

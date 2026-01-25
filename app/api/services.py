@@ -77,7 +77,7 @@ async def get_daily_missions_service(request: DailyMissionRequest) -> DailyMissi
         user_payload_for_agent["event"] = {
             "date": mission_item.date.isoformat(),
             "missionType": mission_item.missionType.value,
-            "difficulty": mission_item.difficulty.value,
+            "difficulty": mission_item.difficulty,
             "mission_result": mission_item.result.value,
             "fail_reason": mission_item.failureReason,
             **user_payload_for_agent.get("event", {})
@@ -93,7 +93,7 @@ async def get_daily_missions_service(request: DailyMissionRequest) -> DailyMissi
 
     최근 미션 이력:
     {    '\n'.join([
-        f"- 날짜: {item.date.isoformat()}, 유형: {item.missionType.value}, 난이도: {item.difficulty.value}, 결과: {item.result.value}{f', 실패 사유: {item.failureReason}' if item.failureReason else ''}"
+        f"- 날짜: {item.date.isoformat()}, 유형: {item.missionType.value}, 난이도: {item.difficulty}, 결과: {item.result.value}{f', 실패 사유: {item.failureReason}' if item.failureReason else ''}"
         for item in request.recentMissionHistory
     ]) if request.recentMissionHistory else '- 없음'}
 
@@ -137,7 +137,7 @@ async def get_daily_feedback_service(request: DailyFeedbackRequest) -> DailyFeed
         "event": {
             "date": request.targetDate.isoformat(),
             "missionType": request.todayMission.missionType.value,
-            "difficulty": request.todayMission.difficulty.value,
+            "difficulty": request.todayMission.difficulty,
             "mission_result": request.todayMission.result.value,
             "fail_reason": request.todayMission.failureReason,
             "successDays_recent": request.recentSummary.successDays,
@@ -150,7 +150,7 @@ async def get_daily_feedback_service(request: DailyFeedbackRequest) -> DailyFeed
     분석 대상 날짜: {request.targetDate.isoformat()}
     오늘 수행한 미션:
     - 유형: {request.todayMission.missionType.value}
-    - 난이도: {request.todayMission.difficulty.value}
+    - 난이도: {request.todayMission.difficulty}
     - 결과: {request.todayMission.result.value}{f' (실패 사유: {request.todayMission.failureReason})' if request.todayMission.failureReason else ''}
     최근 요약:
     - 성공 일수: {request.recentSummary.successDays}일

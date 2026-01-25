@@ -101,7 +101,7 @@ async def get_daily_missions_service(request: DailyMissionRequest) -> DailyMissi
 
     위 정보를 바탕으로 사용자에게 오늘 수행할 데일리 추천 미션 2~3개를 추천해주세요.
     미션은 EXERCISE 또는 DIET 유형으로 구성될 수 있습니다.
-    난이도는 EASY, NORMAL, HARD 중 하나여야 합니다.
+    난이도는 1이상 5이하 정수로 표현합니다.
     각 미션에 대해 예상 소요 시간(분)과 예상 소모 칼로리(kcal)를 함께 알려주세요.
     응답은 반드시 아래 JSON 형식으로만 해주세요:
     ```json
@@ -110,14 +110,14 @@ async def get_daily_missions_service(request: DailyMissionRequest) -> DailyMissi
             {{
                 "name": "미션 이름 1",
                 "type": "EXERCISE",
-                "difficulty": "EASY",
+                "difficulty": 1,
                 "estimatedMinutes": 20,
                 "estimatedCalories": 80
             }},
             {{
                 "name": "미션 이름 2",
                 "type": "DIET",
-                "difficulty": "NORMAL",
+                "difficulty": 3,
                 "estimatedMinutes": 10,
                 "estimatedCalories": 0
             }}

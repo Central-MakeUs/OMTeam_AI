@@ -8,21 +8,17 @@ from datetime import date, time, datetime
 class WorkTimeType(str, Enum):
     FIXED = "FIXED"
     SHIFT = "SHIFT"
-    FREE = "FREE"
 
 class LifestyleType(str, Enum):
-    MORNING = "MORNING"
-    NIGHT = "NIGHT"
-    IRREGULAR = "IRREGULAR"
+    REGULAR_DAYTIME = "REGULAR_DAYTIME" # 비교적 규칙적인 평일 주간 근무
+    IRREGULAR_OVERTIME = "IRREGULAR_OVERTIME" # 야근/불규칙한 일정이 잦음
+    SHIFT_NIGHT = "SHIFT_NIGHT" # 교대 밤샘 근무
+    VARIABLE_DAILY = "VARIABLE_DAILY" # 일정이 매일 다름
+    
 
 class MissionType(str, Enum):
     EXERCISE = "EXERCISE"
     DIET = "DIET"
-
-class Difficulty(str, Enum):
-    EASY = "EASY"
-    NORMAL = "NORMAL"
-    HARD = "HARD"
 
 class MissionResult(str, Enum):
     SUCCESS = "SUCCESS"
@@ -41,7 +37,7 @@ class OnboardingData(BaseModel):
 class RecentMissionHistoryItem(BaseModel):
     date: date
     missionType: MissionType
-    difficulty: Difficulty
+    difficulty: int
     result: MissionResult
     failureReason: Optional[str] = None
 
@@ -54,7 +50,7 @@ class DailyMissionRequest(BaseModel):
 class Mission(BaseModel):
     name: str
     type: MissionType
-    difficulty: Difficulty
+    difficulty: int
     estimatedMinutes: int
     estimatedCalories: int
 
@@ -70,7 +66,7 @@ class Intent(str, Enum):
 
 class TodayMissionData(BaseModel):
     missionType: MissionType
-    difficulty: Difficulty
+    difficulty: int
     result: MissionResult
     failureReason: Optional[str] = None
 

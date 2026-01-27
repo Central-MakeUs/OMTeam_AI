@@ -494,6 +494,27 @@ def planner_agent_node(state: AgentState) -> AgentState:
 - 실행 가능한 액션 아이템 제공
 
 사용자의 요청에 대해 상세하고 실용적인 계획을 제공하세요.
+응답은 반드시 아래 JSON 형식으로만 해주세요:
+```json
+{{
+    "missions": [
+        {{
+            "name": "미션 이름 1",
+            "type": "EXERCISE",
+            "difficulty": "EASY",
+            "estimatedMinutes": 20,
+            "estimatedCalories": 80
+        }},
+        {{
+            "name": "미션 이름 2",
+            "type": "DIET",
+            "difficulty": "NORMAL",
+            "estimatedMinutes": 10,
+            "estimatedCalories": 0
+        }}
+    ]
+}}
+```
 """
     return _agent_node_common(state=state, node_name="planner", system_prompt=system_prompt)
 
@@ -507,6 +528,19 @@ def coach_agent_node(state: AgentState) -> AgentState:
 - 과장된 격려보다는 현실적 코칭
 
 사용자의 요청에 대해 도움이 되는 코칭과 가이드를 제공하세요.
+응답은 반드시 아래 JSON 형식으로만 해주세요:
+```json
+{{
+    "feedbackText": "오늘 미션 수행 결과 및 최근 기록을 반영한 분석형 AI 피드백 문장",
+    "encouragementCandidates": [
+        {{
+            "intent": "PRAISE",
+            "title": "잘하고 있어요",
+            "message": "이대로만 하면 목표에 도달할 수 있어요."
+        }}
+    ]
+}}
+```
 """
     return _agent_node_common(state=state, node_name="coach", system_prompt=system_prompt)
 
@@ -519,6 +553,13 @@ def analysis_agent_node(state: AgentState) -> AgentState:
 - 명확한 결론 및 권장사항 제시
 
 사용자의 요청에 대해 깊이 있는 분석과 인사이트를 제공하세요.
+응답은 반드시 아래 JSON 형식으로만 해주세요:
+```json
+{{
+    "mainFailureReason": "주간 주요 실패 원인 요약 (예: 운동 가능 시간 확보 실패)",
+    "overallFeedback": "유지/개선 중심 종합 피드백 (예: 이번 주에는 일정 제약으로 미션 실패가 많았네요. 다음 주에는 시간을 조금 더 확보해보세요.)"
+}}
+```
 """
     return _agent_node_common(state=state, node_name="analysis", system_prompt=system_prompt)
 

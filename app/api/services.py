@@ -1,51 +1,42 @@
-from typing import List, Optional, Dict, Any
 import json
 from datetime import date, time, datetime
-from pydantic import BaseModel
+from typing import List, Optional, Dict, Any, Type 
 
 from fastapi import HTTPException
+from pydantic import BaseModel
 
 from agent_system import run_agent_system
 from app.api.schemas import (
-    DailyMissionRequest, DailyMissionResponse, Mission,
-    DailyFeedbackRequest, DailyFeedbackResponse, EncouragementCandidate, Intent,
-    WeeklyAnalysisRequest, WeeklyAnalysisResponse,
-    ChatSessionRequest, ChatSessionResponse, BotMessage, BotMessageOption,
-    ChatMessageRequest, ChatMessageResponse, ChatInputType, ChatState
+    DailyMissionRequest, DailyMissionResponse, Mission, OnboardingData, RecentMissionHistoryItem,
+    DailyFeedbackRequest, DailyFeedbackResponse, EncouragementCandidate, Intent, TodayMissionData, RecentSummaryData,
+    WeeklyAnalysisRequest, WeeklyAnalysisResponse, WeekRangeData, WeeklyStatsData, FailureReasonRankedItem,
+    ChatSessionRequest, ChatSessionResponse,
+    ChatMessageRequest, ChatMessageResponse, ChatInputType, ChatState, BotMessage, BotMessageOption
 )
+from app.api_clients import app_server_client
 
-
-def _call_agent_and_parse_response(
-    user_request_prompt: str,
-    user_id: str,
-    user_payload_for_agent: Dict[str, Any],
-    response_model: BaseModel
+def _parse_agent_json_response(
+    agent_raw_response_content: str,
+    response_model: Type[BaseModel] 
 ) -> BaseModel:
     """
-    Calls the agent system, parses its JSON response, and validates against a Pydantic model.
+    AI 에이전트의 원본 응답에서 JSON 부분을 파싱하고, Pydantic 모델로 유효성을 검사합니다.
     """
-    agent_result = run_agent_system(
-        user_request=user_request_prompt,
-        user_id=user_id,
-        user_payload=user_payload_for_agent
-    )
-
-    agent_response_content = agent_result.get("agent_response", "")
-
     try:
-        json_start = agent_response_content.find("```json")
-        json_end = agent_response_content.rfind("```")
+        # LLM이 코드 블록 마커와 함께 응답하는 경우에 대비
+        json_start = agent_raw_response_content.find("```json")
+        json_end = agent_raw_response_content.rfind("```")
 
         if json_start != -1 and json_end != -1 and json_start < json_end:
-            json_str = agent_response_content[json_start + len("```json"):
-                                               json_end].strip()
+            json_str = agent_raw_response_content[json_start + len("```json"):
+                                                     json_end].strip()
             response_data = json.loads(json_str)
-        else:
-            response_data = json.loads(agent_response_content)
+        else: # 마커가 없으면 전체를 JSON으로 간주
+            response_data = json.loads(agent_raw_response_content)
     except json.JSONDecodeError as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to parse AI agent's response as JSON: {e}. Raw response: {agent_response_content}"
+            detail=f"Failed to parse AI agent's response as JSON: {e}. Raw response: {agent_raw_response_content}"
         )
 
     try:
@@ -125,9 +116,12 @@ async def get_daily_missions_service(request: DailyMissionRequest) -> DailyMissi
     }}
     ```
     """
-    return _call_agent_and_parse_response(
-        user_request_prompt, user_id, user_payload_for_agent, DailyMissionResponse
+    agent_result = run_agent_system(
+        user_request=user_request_prompt,
+        user_id=user_id,
+        user_payload=user_payload_for_agent
     )
+    return _parse_agent_json_response(agent_result.get("agent_response", ""), DailyMissionResponse)
 
 
 async def get_daily_feedback_service(request: DailyFeedbackRequest) -> DailyFeedbackResponse:
@@ -183,9 +177,12 @@ async def get_daily_feedback_service(request: DailyFeedbackRequest) -> DailyFeed
     }}
     ```
     """
-    return _call_agent_and_parse_response(
-        user_request_prompt, user_id, user_payload_for_agent, DailyFeedbackResponse
+    agent_result = run_agent_system(
+        user_request=user_request_prompt,
+        user_id=user_id,
+        user_payload=user_payload_for_agent
     )
+    return _parse_agent_json_response(agent_result.get("agent_response", ""), DailyFeedbackResponse)
 
 
 async def get_weekly_analysis_service(request: WeeklyAnalysisRequest) -> WeeklyAnalysisResponse:
@@ -228,9 +225,12 @@ async def get_weekly_analysis_service(request: WeeklyAnalysisRequest) -> WeeklyA
     }}
     ```
     """
-    return _call_agent_and_parse_response(
-        user_request_prompt, user_id, user_payload_for_agent, WeeklyAnalysisResponse
+    agent_result = run_agent_system(
+        user_request=user_request_prompt,
+        user_id=user_id,
+        user_payload=user_payload_for_agent
     )
+    return _parse_agent_json_response(agent_result.get("agent_response", ""), WeeklyAnalysisResponse)
 
 
 async def create_chat_session_service(request: ChatSessionRequest) -> ChatSessionResponse:
@@ -267,55 +267,73 @@ async def create_chat_session_service(request: ChatSessionRequest) -> ChatSessio
     }}
     ```
     """
-    return _call_agent_and_parse_response(
-        user_request_prompt, user_id, user_payload_for_agent, ChatSessionResponse
+    agent_result = run_agent_system(
+        user_request=user_request_prompt,
+        user_id=user_id,
+        user_payload=user_payload_for_agent
     )
+    return _parse_agent_json_response(agent_result.get("agent_response", ""), ChatSessionResponse)
 
 
 async def handle_chat_message_service(request: ChatMessageRequest) -> ChatMessageResponse:
-    user_id = str(request.userId)
-    
-    user_input_content = ""
-    if request.input.type == ChatInputType.TEXT and request.input.text:
-        user_input_content = f"사용자 텍스트 입력: {request.input.text}"
-    elif request.input.type == ChatInputType.OPTION and request.input.value:
-        user_input_content = f"사용자 선택지 입력: {request.input.value}"
+    """
+    사용자 채팅 메시지를 받아, 관련 컨텍스트를 포함하여 agent_system을 호출하고,
+    그 결과를 채팅 응답으로 변환하는 중앙 서비스.
+    """
+    user_id = request.userId
+    user_request_text = request.input.text or request.input.value or ""
 
+    # 1. 메인 앱 서버에서 사용자의 전체 컨텍스트 데이터를 가져옵니다.
+    # user_data = await app_server_client.get_user_ai_data(user_id) #TODO: app_server_client 실제 구현 후 주석 해제
+    user_data = {} # 임시 데이터
+
+    # 2. agent_system의 update_user_context가 이해할 수 있는 user_payload 형식으로 데이터를 가공합니다.
     user_payload_for_agent = {
+        "preferences": user_data.get("onboarding"),
         "event": {
-            "session_id": request.sessionId,
-            "input_type": request.input.type.value,
-            "input_content": user_input_content,
-            "timestamp": request.timestamp.isoformat(),
         }
     }
 
-    user_request_prompt = f"""
-    이전 대화 세션 ID: {request.sessionId}
-    사용자 ID: {request.userId}
-    사용자 입력: {user_input_content}
-    입력 시각: {request.timestamp.isoformat()}
-
-    사용자의 입력에 대해 챗봇 메시지를 생성해주세요.
-    필요하다면 2~3개의 선택지 옵션을 제공해주세요.
-    대화가 종료되어야 할 시점에는 "state.isTerminal"을 true로 설정해주세요.
-    응답은 반드시 아래 JSON 형식으로만 해주세요:
-    ```json
-    {{
-        "botMessage": {{
-            "messageId": 5002,
-            "text": "사용자의 입력에 대한 챗봇 응답 메시지",
-            "options": [
-                {{"label": "선택지 1", "value": "VALUE_1"}},
-                {{"label": "선택지 2", "value": "VALUE_2"}}
-            ]
-        }},
-        "state": {{
-            "isTerminal": false
-        }}
-    }}
-    ```
-    """
-    return _call_agent_and_parse_response(
-        user_request_prompt, user_id, user_payload_for_agent, ChatMessageResponse
+    # 3. 사용자 요청과 함께 컨텍스트 데이터를 담아 agent_system을 "한 번만" 호출합니다.
+    agent_result = run_agent_system(
+        user_request=user_request_text,
+        user_id=str(user_id),
+        user_payload=user_payload_for_agent
     )
+    
+    selected_agent = agent_result.get("selected_agent", "unknown")
+    agent_response_content = agent_result.get("agent_response", "")
+
+    response_model_map = {
+        "planner": DailyMissionResponse,
+        "coach": DailyFeedbackResponse,
+        "analysis": WeeklyAnalysisResponse,
+    }
+    
+    response_model = response_model_map.get(selected_agent)
+    
+    if not response_model:
+        # 에이전트가 선택되지 않았거나, 일반 채팅 응답인 경우
+        final_bot_message_text = agent_response_content
+    else:
+        try:
+            # 선택된 에이전트에 맞는 Pydantic 모델로 파싱
+            parsed_response = _parse_agent_json_response(agent_response_content, response_model)
+            # 파싱된 모델을 다시 JSON 문자열로 변환하여 text 필드에 저장
+            final_bot_message_text = parsed_response.model_dump_json(indent=2)
+        except HTTPException as e:
+            # 파싱 실패 시, 에러 메시지를 그대로 반환
+            final_bot_message_text = f"Error processing agent response: {e.detail}"
+
+
+    final_bot_message = BotMessage(
+        messageId=int(datetime.now().timestamp()),
+        text=final_bot_message_text,
+        options=[] # TODO: agent_system에서 옵션도 반환할 수 있도록 확장 필요
+    )
+
+    return ChatMessageResponse(
+        botMessage=final_bot_message,
+        state=ChatState(isTerminal=False) # TODO: agent_system에서 대화 종료 여부도 반환하도록 확장 필요
+    )
+

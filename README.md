@@ -7,7 +7,7 @@
 - 3. `uv venv .venv`
 - 4. `source .venv/bin/activate`
 - 5. `uv sync`
-- 6. 터미널 '`uv run uvicorn app.main:app --host 0.0.0.0 --port 8000`'
+- 6. 터미널 '`uv run uvicorn app.main:app --host 0.0.0.0 --reload --port 8000`'
 - 7. url '127.0.0.1:8000/redoc' -> 스웨거처럼 api 확인 가능
 
 ## 테스트 실행 방법
@@ -26,7 +26,7 @@
 
 # AI Server API Usage Examples (cURL)
 
-` curl``http://localhost:8000/{api_endpoint} ` 명령어 사용 api endpoint 테스트.
+`curl``http://localhost:8000/{api_endpoint}` 명령어 사용 api endpoint 테스트.
 
 ### 1. 데일리 추천 미션 생성 (POST /ai/missions/daily)
 
@@ -181,3 +181,10 @@ curl -X POST "http://localhost:8000/ai/chat/messages" \
   "timestamp": "2026-01-11T21:10:00+09:00"
 }'
 ```
+
+1. chat -> routing
+
+- 채팅으로 유저 입력 들어오면 의도 구분해서 에이전트 실행
+
+- 에이전트 실행할 때, 앱 서버에서 유저 정보 받아와야 함.(다시 수정 필요)
+-

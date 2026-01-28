@@ -161,3 +161,17 @@ class ChatState(BaseModel):
 class ChatMessageResponse(BaseModel):
     botMessage: BotMessage # Re-use BotMessage model
     state: ChatState
+
+
+# --- Unified AI Response Model ---
+# To provide a consistent response structure for the app server, all AI server responses
+# are wrapped in this model. Based on the user's request, only one of the
+# optional fields below will be populated.
+class UnifiedAIResponse(BaseModel):
+    dailyMission: Optional[DailyMissionResponse] = None
+    dailyFeedback: Optional[DailyFeedbackResponse] = None
+    weeklyAnalysis: Optional[WeeklyAnalysisResponse] = None
+    chat: Optional[ChatMessageResponse] = None
+    # A general text field for errors or simple messages that don't fit other schemas.
+    error: Optional[str] = None
+

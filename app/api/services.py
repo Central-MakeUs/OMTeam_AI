@@ -11,7 +11,8 @@ from app.api.schemas import (
     DailyFeedbackRequest, DailyFeedbackResponse, EncouragementCandidate, Intent, TodayMissionData, RecentSummaryData,
     WeeklyAnalysisRequest, WeeklyAnalysisResponse, WeekRangeData, WeeklyStatsData, FailureReasonRankedItem,
     ChatSessionRequest, ChatSessionResponse,
-    ChatMessageRequest, ChatMessageResponse, ChatInputType, ChatState, BotMessage, BotMessageOption
+    ChatMessageRequest, ChatMessageResponse, ChatInputType, ChatState, BotMessage, BotMessageOption,
+    UnifiedAIResponse
 )
 from app.api_clients import app_server_client
 
@@ -48,7 +49,7 @@ def _parse_agent_json_response(
         )
 
 
-async def get_daily_missions_service(request: DailyMissionRequest) -> DailyMissionResponse:
+async def get_daily_missions_service(request: DailyMissionRequest) -> UnifiedAIResponse:
     user_id = str(request.userId)
 
     user_payload_for_agent = {
@@ -121,10 +122,14 @@ async def get_daily_missions_service(request: DailyMissionRequest) -> DailyMissi
         user_id=user_id,
         user_payload=user_payload_for_agent
     )
-    return _parse_agent_json_response(agent_result.get("agent_response", ""), DailyMissionResponse)
+    try:
+        parsed_response = _parse_agent_json_response(agent_result.get("agent_response", ""), DailyMissionResponse)
+        return UnifiedAIResponse(dailyMission=parsed_response)
+    except HTTPException as e:
+        return UnifiedAIResponse(error=f"Agent response parsing failed: {e.detail}")
 
 
-async def get_daily_feedback_service(request: DailyFeedbackRequest) -> DailyFeedbackResponse:
+async def get_daily_feedback_service(request: DailyFeedbackRequest) -> UnifiedAIResponse:
     user_id = str(request.userId)
 
     user_payload_for_agent = {
@@ -182,10 +187,14 @@ async def get_daily_feedback_service(request: DailyFeedbackRequest) -> DailyFeed
         user_id=user_id,
         user_payload=user_payload_for_agent
     )
-    return _parse_agent_json_response(agent_result.get("agent_response", ""), DailyFeedbackResponse)
+    try:
+        parsed_response = _parse_agent_json_response(agent_result.get("agent_response", ""), DailyFeedbackResponse)
+        return UnifiedAIResponse(dailyFeedback=parsed_response)
+    except HTTPException as e:
+        return UnifiedAIResponse(error=f"Agent response parsing failed: {e.detail}")
 
 
-async def get_weekly_analysis_service(request: WeeklyAnalysisRequest) -> WeeklyAnalysisResponse:
+async def get_weekly_analysis_service(request: WeeklyAnalysisRequest) -> UnifiedAIResponse:
     user_id = str(request.userId)
 
     user_payload_for_agent = {
@@ -230,10 +239,14 @@ async def get_weekly_analysis_service(request: WeeklyAnalysisRequest) -> WeeklyA
         user_id=user_id,
         user_payload=user_payload_for_agent
     )
-    return _parse_agent_json_response(agent_result.get("agent_response", ""), WeeklyAnalysisResponse)
+    try:
+        parsed_response = _parse_agent_json_response(agent_result.get("agent_response", ""), WeeklyAnalysisResponse)
+        return UnifiedAIResponse(weeklyAnalysis=parsed_response)
+    except HTTPException as e:
+        return UnifiedAIResponse(error=f"Agent response parsing failed: {e.detail}")
 
 
-async def create_chat_session_service(request: ChatSessionRequest) -> ChatSessionResponse:
+async def create_chat_session_service(request: ChatSessionRequest) -> UnifiedAIResponse:
     user_id = str(request.userId)
 
     user_payload_for_agent = {
@@ -272,59 +285,47 @@ async def create_chat_session_service(request: ChatSessionRequest) -> ChatSessio
         user_id=user_id,
         user_payload=user_payload_for_agent
     )
-    return _parse_agent_json_response(agent_result.get("agent_response", ""), ChatSessionResponse)
+    try:
+        # ChatSessionResponse를 파싱하고 ChatMessageResponse로 변환하여 통일성 유지
+        parsed_response = _parse_agent_json_response(agent_result.get("agent_response", ""), ChatSessionResponse)
+        chat_response = ChatMessageResponse(botMessage=parsed_response.botMessage, state=ChatState(isTerminal=False))
+        return UnifiedAIResponse(chat=chat_response)
+    except HTTPException as e:
+        return UnifiedAIResponse(error=f"Agent response parsing failed: {e.detail}")
 
 
-async def handle_chat_message_service(request: ChatMessageRequest) -> ChatMessageResponse:
+async def handle_chat_message_service(request: ChatMessageRequest) -> UnifiedAIResponse:
     """
     사용자 채팅 메시지를 받아, 관련 컨텍스트를 포함하여 agent_system을 호출하고,
     그 결과를 채팅 응답으로 변환하는 중앙 서비스.
     """
-    user_id = request.userId
+    user_id = str(request.userId)
     user_request_text = request.input.text or request.input.value or ""
 
-    # 1. 메인 앱 서버에서 사용자의 전체 컨텍스트 데이터를 가져옵니다.
-    # user_data = await app_server_client.get_user_ai_data(user_id) #TODO: app_server_client 실제 구현 후 주석 해제
+    # 1. 메인 앱 서버에서 사용자의 전체 컨텍스트 데이터를 가져옵니다. (향후 구현)
+    # user_data = await app_server_client.get_user_ai_data(user_id)
     user_data = {} # 임시 데이터
 
     # 2. agent_system의 update_user_context가 이해할 수 있는 user_payload 형식으로 데이터를 가공합니다.
     user_payload_for_agent = {
         "preferences": user_data.get("onboarding"),
-        "event": {
-        }
+        "event": {}
     }
 
     # 3. 사용자 요청과 함께 컨텍스트 데이터를 담아 agent_system을 "한 번만" 호출합니다.
     agent_result = run_agent_system(
         user_request=user_request_text,
-        user_id=str(user_id),
+        user_id=user_id,
         user_payload=user_payload_for_agent
     )
     
     selected_agent = agent_result.get("selected_agent", "unknown")
     agent_response_content = agent_result.get("agent_response", "")
 
-    response_model_map = {
-        "planner": DailyMissionResponse,
-        "coach": DailyFeedbackResponse,
-        "analysis": WeeklyAnalysisResponse,
-    }
-    
-    response_model = response_model_map.get(selected_agent)
-    
-    if not response_model:
-        # 에이전트가 선택되지 않았거나, 일반 채팅 응답인 경우
-        final_bot_message_text = agent_response_content
-    else:
-        try:
-            # 선택된 에이전트에 맞는 Pydantic 모델로 파싱
-            parsed_response = _parse_agent_json_response(agent_response_content, response_model)
-            # 파싱된 모델을 다시 JSON 문자열로 변환하여 text 필드에 저장
-            final_bot_message_text = parsed_response.model_dump_json(indent=2)
-        except HTTPException as e:
-            # 파싱 실패 시, 에러 메시지를 그대로 반환
-            final_bot_message_text = f"Error processing agent response: {e.detail}"
-
+    # 여기서는 복잡한 파싱 로직 대신, 우선 텍스트 기반 채팅 응답을 기본으로 구성합니다.
+    # 만약 에이전트가 특정 JSON 구조를 반환했다면, 클라이언트에서 그 구조를 해석할 수도 있습니다.
+    # 지금은 agent_system의 순수 텍스트 응답을 final_bot_message_text로 사용합니다.
+    final_bot_message_text = agent_response_content
 
     final_bot_message = BotMessage(
         messageId=int(datetime.now().timestamp()),
@@ -332,8 +333,8 @@ async def handle_chat_message_service(request: ChatMessageRequest) -> ChatMessag
         options=[] # TODO: agent_system에서 옵션도 반환할 수 있도록 확장 필요
     )
 
-    return ChatMessageResponse(
+    chat_response = ChatMessageResponse(
         botMessage=final_bot_message,
         state=ChatState(isTerminal=False) # TODO: agent_system에서 대화 종료 여부도 반환하도록 확장 필요
     )
-
+    return UnifiedAIResponse(chat=chat_response)

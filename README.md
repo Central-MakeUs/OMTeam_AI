@@ -1,4 +1,4 @@
-# OMTeam
+# OMTeam AI Server
 
 ## 실행 방법
 
@@ -8,7 +8,7 @@
 - 4. `source .venv/bin/activate`
 - 5. `uv sync`
 - 6. 터미널 '`uv run uvicorn app.main:app --host 0.0.0.0 --reload --port 8000`'
-- 7. url '127.0.0.1:8000/redoc' -> 스웨거처럼 api 확인 가능
+- 7. url '127.0.0.1:8000/redoc' -> 스웨거UI api 확인 가능
 
 ## 테스트 실행 방법
 
@@ -20,137 +20,28 @@
 
 ---
 
----
+## AI Server API 사용 방법 (cURL 예시)
 
----
+### 아키텍처 변경 개요 및 통합 API 안내
 
-# AI Server API Usage Examples (cURL)
+기존에는 기능별로 나뉘어 있던 여러 API 엔드포인트(`missions/daily`, `analysis/daily`, `chat/sessions`, `chat/messages`)가 이제 **`POST /ai/chat/messages` 단일 엔드포인트로 통합**되었습니다.
 
-`curl``http://localhost:8000/{api_endpoint}` 명령어 사용 api endpoint 테스트.
+이는 AI 서버가 자체적인 오케스트레이터를 통해 사용자의 요청 의도를 분석하고, `userId` 기반의 컨텍스트를 서버에서 직접 관리하며, 필요에 따라 적절한 전문 에이전트(미션 플래너, 분석가, 코치)를 실행하는 새로운 아키텍처를 반영합니다.
 
-### 1. 데일리 추천 미션 생성 (POST /ai/missions/daily)
+App 서버는 모든 AI 관련 요청을 `/ai/chat/messages`로 보내고, 응답으로 받는 **`UnifiedAIResponse`** 모델을 통해 어떤 AI 기능의 결과가 반환되었는지 확인합니다.
 
-설명: 사용자 온보딩 정보, 최근 미션 이력, 주간 실패 원인을 바탕으로 데일리 미션을 추천받습니다.
+### 통합 AI 채팅 (Unified AI Chat)
 
-cURL Command:
+모든 AI 기능 요청 및 일반 대화를 처리하는 유일한 엔드포인트입니다.
 
-```bash
-curl -X POST "http://localhost:8000/ai/missions/daily" \
--H "Content-Type: application/json" \
--d '{
-  "userId": 12345,
-  "onboarding": {
-    "appGoal": "체중 감량",
-    "workTimeType": "FIXED",
-    "availableStartTime": "18:30:00",
-    "availableEndTime": "22:00:00",
-    "minExerciseMinutes": 20,
-    "preferredExercises": ["러닝", "훌라후프"],
-    "lifestyleType": "NIGHT"
-  },
-  "recentMissionHistory": [
-    {
-      "date": "2026-01-08",
-      "missionType": "EXERCISE",
-      "difficulty": "NORMAL",
-      "result": "FAILURE",
-      "failureReason": "시간 부족"
-    },
-    {
-      "date": "2026-01-09",
-      "missionType": "EXERCISE",
-      "difficulty": "EASY",
-      "result": "SUCCESS"
-    }
-  ],
-  "weeklyFailureReasons": ["시간 부족", "동기 부족"]
-}'
-```
+- **method**: POST
+- **url**: `/ai/chat/messages`
 
----
+#### 1. 일반 채팅 요청 (General Chat Request)
 
-### 2. 데일리 AI 피드백 생성 (POST /ai/analysis/daily)
-
-설명: 오늘 미션 수행 결과와 최근 요약 정보를 바탕으로 분석형 AI 피드백 문장과 격려/응원 메시지 후보를 받습니다.
+설명: 사용자의 일반적인 자연어 질문이나 대화를 AI 에이전트에게 전달합니다.
 
 cURL Command:
-
-```bash
-curl -X POST "http://localhost:8000/ai/analysis/daily" \
--H "Content-Type: application/json" \
--d '{
-  "userId": 12345,
-  "targetDate": "2026-01-10",
-  "todayMission": {
-    "missionType": "EXERCISE",
-    "difficulty": "NORMAL",
-    "result": "FAILURE",
-    "failureReason": "시간 부족"
-  },
-  "recentSummary": {
-    "successDays": 3,
-    "failureDays": 2
-  }
-}'
-```
-
----
-
-### 3. 주간 AI 분석 (POST /ai/analysis/weekly)
-
-설명: 주간 통계 및 주요 실패 원인 순위를 바탕으로 주간 분석 피드백을 받습니다.
-
-cURL Command:
-
-```bash
-curl -X POST "http://localhost:8000/ai/analysis/weekly" \
--H "Content-Type: application/json" \
--d '{
-  "userId": 12345,
-  "weekRange": {
-    "start": "2026-01-05",
-    "end": "2026-01-11"
-  },
-  "weeklyStats": {
-    "totalDays": 7,
-    "successDays": 3,
-    "failureDays": 4
-  },
-  "failureReasonsRanked": [
-    {"reason": "시간 부족", "count": 3},
-    {"reason": "동기 부족", "count": 1}
-  ]
-}'
-```
-
----
-
-### 4. 채팅 세션 생성 (POST /ai/chat/sessions)
-
-설명: 새로운 채팅 세션을 시작하고 초기 챗봇 메시지를 받습니다.
-
-cURL Command:
-
-```bash
-curl -X POST "http://localhost:8000/ai/chat/sessions" \
--H "Content-Type: application/json" \
--d '{
-  "sessionId": 1001,
-  "userId": 12345,
-  "initialContext": {
-    "appGoal": "체중 감량",
-    "lifestyleType": "NIGHT"
-  }
-}'
-```
-
----
-
-### 5. 챗봇 대화 (POST /ai/chat/messages)
-
-설명: 사용자 입력에 따라 챗봇과 대화를 이어갑니다. 텍스트 입력 또는 옵션 선택이 가능합니다.
-
-cURL Command (텍스트 입력):
 
 ```bash
 curl -X POST "http://localhost:8000/ai/chat/messages" \
@@ -160,31 +51,104 @@ curl -X POST "http://localhost:8000/ai/chat/messages" \
   "userId": 12345,
   "input": {
     "type": "TEXT",
-    "text": "운동이 너무 힘들어요"
+    "text": "운동이 너무 힘들어요. 동기부여가 안돼요."
   },
   "timestamp": "2026-01-11T21:10:00+09:00"
 }'
 ```
 
-cURL Command (옵션 선택):
+예상 응답 (UnifiedAIResponse):
+
+```json
+{
+  "dailyMission": null,
+  "dailyFeedback": null,
+  "weeklyAnalysis": null,
+  "chat": {
+    "botMessage": {
+      "messageId": 1709865600, // timestamp 기반 ID
+      "text": "어떤 점이 가장 힘드셨나요? 제가 어떻게 도와드릴 수 있을까요?",
+      "options": []
+    },
+    "state": {
+      "isTerminal": false
+    }
+  },
+  "error": null
+}
+```
+
+#### 2. 특정 기능 요청 (예: 데일리 미션 생성)
+
+설명: App 서버에서 '오늘의 미션 추천'과 같은 특정 UI 액션을 통해 AI 기능을 호출할 때 사용합니다. `input.text`에 요청 내용을 명시하고, 필요한 구조화된 데이터는 `context` 필드에 추가할 수 있습니다. `context`에 포함된 데이터는 `services.py`에서 프롬프트 생성 시 활용됩니다.
+
+cURL Command:
 
 ```bash
 curl -X POST "http://localhost:8000/ai/chat/messages" \
 -H "Content-Type: application/json" \
 -d '{
-  "sessionId": 1,
+  "sessionId": 2,
   "userId": 12345,
   "input": {
-    "type": "OPTION",
-    "value": "TIME_SHORTAGE"
+    "type": "TEXT",
+    "text": "오늘의 미션을 추천해줘."
   },
-  "timestamp": "2026-01-11T21:10:00+09:00"
+  "context": {
+    "onboarding": {
+      "appGoal": "체중 감량",
+      "workTimeType": "FIXED",
+      "availableStartTime": "18:30:00",
+      "availableEndTime": "22:00:00",
+      "minExerciseMinutes": 20,
+      "preferredExercises": ["러닝", "홈트"],
+      "lifestyleType": "NIGHT"
+    },
+    "recentMissionHistory": [
+      {
+        "date": "2026-01-08",
+        "missionType": "EXERCISE",
+        "difficulty": "NORMAL",
+        "result": "FAILURE",
+        "failureReason": "시간 부족"
+      }
+    ],
+    "weeklyFailureReasons": ["시간 부족"]
+  },
+  "timestamp": "2026-01-12T10:05:00+09:00"
 }'
 ```
 
-1. chat -> routing
+예상 응답 (UnifiedAIResponse):
 
-- 채팅으로 유저 입력 들어오면 의도 구분해서 에이전트 실행
+```json
+{
+  "dailyMission": {
+    "missions": [
+      {
+        "name": "저녁 스트레칭 20분",
+        "type": "EXERCISE",
+        "difficulty": "EASY",
+        "estimatedMinutes": 20,
+        "estimatedCalories": 80
+      }
+    ]
+  },
+  "dailyFeedback": null,
+  "weeklyAnalysis": null,
+  "chat": null,
+  "error": null
+}
+```
 
-- 에이전트 실행할 때, 앱 서버에서 유저 정보 받아와야 함.(다시 수정 필요)
--
+---
+
+### Deprecated API Endpoints (참고용)
+
+아래 엔드포인트들은 이제 사용되지 않으며, 모든 기능은 위 `/ai/chat/messages` 통합 엔드포인트를 통해 접근할 수 있습니다. 이 섹션은 과거 API 명세를 이해하기 위한 참고용입니다.
+
+- `POST /ai/missions/daily`
+- `POST /ai/analysis/daily`
+- `POST /ai/analysis/weekly`
+- `POST /ai/chat/sessions`
+- `POST /ai/chat/messages` (기존 채팅 기능)

@@ -7,7 +7,7 @@
 - 3. `uv venv .venv`
 - 4. `source .venv/bin/activate`
 - 5. `uv sync`
-- 6. 터미널 '`uv run uvicorn app.main:app --host 0.0.0.0 --port 8000`'
+- 6. 터미널 '`uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`'
 - 7. url '127.0.0.1:8000/redoc' -> 스웨거처럼 api 확인 가능
 
 ## 테스트 실행 방법
@@ -26,7 +26,7 @@
 
 # AI Server API Usage Examples (cURL)
 
-` curl``http://localhost:8000/{api_endpoint} ` 명령어 사용 api endpoint 테스트.
+`curl``http://localhost:8000/{api_endpoint}` 명령어 사용 api endpoint 테스트.
 
 ### 1. 데일리 추천 미션 생성 (POST /ai/missions/daily)
 
@@ -37,33 +37,36 @@ cURL Command:
 ```bash
 curl -X POST "http://localhost:8000/ai/missions/daily" \
 -H "Content-Type: application/json" \
--d '{
-  "userId": 12345,
+-d
+'{
+  "userId": 1,
+  "userContext": {
+    "nickname": "규빈",
+    "appGoal": "건강한 생활 습관 형성",
+    "recentMissionSuccessRate": 0.58,
+    "currentLevel": 3,
+    "successCount": 18,
+    "preferredExercise": "러닝",
+    "lifestyleType": "REGULAR_DAYTIME"
+  },
   "onboarding": {
-    "appGoal": "체중 감량",
+    "appGoal": "체력 증진",
     "workTimeType": "FIXED",
-    "availableStartTime": "18:30:00",
-    "availableEndTime": "22:00:00",
-    "minExerciseMinutes": 20,
-    "preferredExercises": ["러닝", "훌라후프"],
-    "lifestyleType": "NIGHT"
+    "availableStartTime": "07:00",
+    "availableEndTime": "22:00",
+    "minExerciseMinutes": 10,
+    "preferredExercises": ["러닝", "스트레칭"],
+    "lifestyleType": "VARIABLE_DAILY"
   },
   "recentMissionHistory": [
     {
-      "date": "2026-01-08",
       "missionType": "EXERCISE",
-      "difficulty": "NORMAL",
-      "result": "FAILURE",
+      "status": "FAILED",
+      "performedDate": "2026-01-30",
       "failureReason": "시간 부족"
-    },
-    {
-      "date": "2026-01-09",
-      "missionType": "EXERCISE",
-      "difficulty": "EASY",
-      "result": "SUCCESS"
     }
   ],
-  "weeklyFailureReasons": ["시간 부족", "동기 부족"]
+  "weeklyFailureReasons": ["시간 부족", "피로"]
 }'
 ```
 
@@ -78,18 +81,23 @@ cURL Command:
 ```bash
 curl -X POST "http://localhost:8000/ai/analysis/daily" \
 -H "Content-Type: application/json" \
--d '{
-  "userId": 12345,
-  "targetDate": "2026-01-10",
+-d
+'{
+  "userId": 1,
+  "targetDate": "2026-02-01",
+  "userContext": {
+    "nickname": "규빈",
+    "appGoal": "건강한 생활 습관 형성",
+    "recentMissionSuccessRate": 0.71,
+    "currentLevel": 3,
+    "successCount": 18,
+    "preferredExercise": "러닝",
+    "lifestyleType": "REGULAR_DAYTIME"
+  },
   "todayMission": {
     "missionType": "EXERCISE",
-    "difficulty": "NORMAL",
-    "result": "FAILURE",
+    "status": "FAILED",
     "failureReason": "시간 부족"
-  },
-  "recentSummary": {
-    "successDays": 3,
-    "failureDays": 2
   }
 }'
 ```
@@ -105,79 +113,84 @@ cURL Command:
 ```bash
 curl -X POST "http://localhost:8000/ai/analysis/weekly" \
 -H "Content-Type: application/json" \
--d '{
-  "userId": 12345,
-  "weekRange": {
-    "start": "2026-01-05",
-    "end": "2026-01-11"
+-d
+'{
+  "userId": 1,
+  "weekStartDate": "2026-01-26",
+  "weekEndDate": "2026-02-01",
+  "failureReasons": ["시간 부족", "피로"],
+  "userContext": {
+    "nickname": "규빈",
+    "appGoal": "건강한 생활 습관 형성",
+    "recentMissionSuccessRate": 0.57,
+    "currentLevel": 3,
+    "successCount": 18,
+    "preferredExercise": "러닝",
+    "lifestyleType": "REGULAR_DAYTIME"
   },
-  "weeklyStats": {
-    "totalDays": 7,
-    "successDays": 3,
-    "failureDays": 4
-  },
-  "failureReasonsRanked": [
-    {"reason": "시간 부족", "count": 3},
-    {"reason": "동기 부족", "count": 1}
+  "weeklyResults": [
+    {
+      "date": "2026-01-27",
+      "dayOfWeek": "TUESDAY",
+      "status": "FAILED",
+      "missionType": "EXERCISE",
+      "failureReason": "시간 부족"
+    }
+  ],
+  "monthlyDayOfWeekStats": [
+    {
+      "dayOfWeek": "TUESDAY",
+      "totalCount": 4,
+      "successCount": 1,
+      "successRate": 0.25
+    }
   ]
 }'
 ```
 
 ---
 
-### 4. 채팅 세션 생성 (POST /ai/chat/sessions)
+### 4. 챗봇 대화 (POST /ai/chat/messages)
 
-설명: 새로운 채팅 세션을 시작하고 초기 챗봇 메시지를 받습니다.
+설명: 사용자 입력에 따라 챗봇과 대화를 이어갑니다. 텍스트 입력 또는 옵션 선택이 가능합니다.
 
 cURL Command:
 
 ```bash
-curl -X POST "http://localhost:8000/ai/chat/sessions" \
--H "Content-Type: application/json" \
--d '{
-  "sessionId": 1001,
-  "userId": 12345,
-  "initialContext": {
-    "appGoal": "체중 감량",
-    "lifestyleType": "NIGHT"
-  }
-}'
-```
-
----
-
-### 5. 챗봇 대화 (POST /ai/chat/messages)
-
-설명: 사용자 입력에 따라 챗봇과 대화를 이어갑니다. 텍스트 입력 또는 옵션 선택이 가능합니다.
-
-cURL Command (텍스트 입력):
-
-```bash
 curl -X POST "http://localhost:8000/ai/chat/messages" \
 -H "Content-Type: application/json" \
--d '{
-  "sessionId": 1,
-  "userId": 12345,
+-d
+'{
   "input": {
     "type": "TEXT",
-    "text": "운동이 너무 힘들어요"
+    "text": "운동이 힘들어요",
+    "value": null
   },
-  "timestamp": "2026-01-11T21:10:00+09:00"
-}'
-```
-
-cURL Command (옵션 선택):
-
-```bash
-curl -X POST "http://localhost:8000/ai/chat/messages" \
--H "Content-Type: application/json" \
--d '{
-  "sessionId": 1,
-  "userId": 12345,
-  "input": {
-    "type": "OPTION",
-    "value": "TIME_SHORTAGE"
+  "timestamp": "2026-01-11T21:10:00+09:00",
+  "userContext": {
+    "nickname": "규빈",
+    "appGoal": "건강한 생활 습관 형성",
+    "recentMissionSuccessRate": 0.71,
+    "currentLevel": 3,
+    "successCount": 18,
+    "preferredExercise": "러닝",
+    "lifestyleType": "REGULAR_DAYTIME"
   },
-  "timestamp": "2026-01-11T21:10:00+09:00"
+  "conversationHistory": [
+    {
+      "role": "USER",
+      "type": "TEXT",
+      "text": "안녕",
+      "value": null,
+      "options": null
+    },
+    {
+      "role": "ASSISTANT",
+      "type": null,
+      "text": "안녕하세요! 무엇을 도와드릴까요?",
+      "value": null,
+      "options": []
+    }
+  ]
 }'
 ```

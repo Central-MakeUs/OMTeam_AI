@@ -53,6 +53,7 @@ class AiMissionRecommendResponse(BaseModel):
 
 class TodayMission(BaseModel):
     missionType: str
+    difficulty: int
     status: str
     failureReason: Optional[str] = None
 

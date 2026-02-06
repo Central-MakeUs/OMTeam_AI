@@ -59,18 +59,8 @@ class TodayMission(BaseModel):
 class AiDailyAnalysisRequest(BaseModel):
     userId: int
     targetDate: date
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-    todayMission: TodayMissionData
-    recentSummary: RecentSummaryData
-=======
     userContext: UserContext
     todayMission: Optional[TodayMission] = None
->>>>>>> Stashed changes
-=======
-    userContext: UserContext
-    todayMission: TodayMission
->>>>>>> a938970cd8a964e0ac6ec2c513e692d98053b0ce
 
 class EncouragementCandidate(BaseModel):
     intent: str # 'PRAISE', 'RETRY', 'NORMAL', 'PUSH'
@@ -84,27 +74,12 @@ class AiDailyAnalysisResponse(BaseModel):
 
 # --- /ai/analysis/weekly Models ---
 
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-class WeeklyStatsData(BaseModel):
-    totalDays: int
-    successDays: int
-    failureDays: int
-=======
-=======
->>>>>>> a938970cd8a964e0ac6ec2c513e692d98053b0ce
 class DailyResultSummary(BaseModel):
     date: date
     dayOfWeek: str # 'MONDAY' ~ 'SUNDAY'
     status: str
-<<<<<<< HEAD
     missionType: Optional[str] = None
     failureReason: Optional[str] = None
->>>>>>> Stashed changes
-=======
-    missionType: str
-    failureReason: Optional[str] = None
->>>>>>> a938970cd8a964e0ac6ec2c513e692d98053b0ce
 
 class DayOfWeekStats(BaseModel):
     dayOfWeek: str

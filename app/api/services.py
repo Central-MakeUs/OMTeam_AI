@@ -114,39 +114,12 @@ async def get_daily_feedback_service(request: AiDailyAnalysisRequest) -> AiDaily
     user_request_prompt = f"""
     사용자 ID: {request.userId}
     분석 대상 날짜: {request.targetDate.isoformat()}
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-    오늘 수행한 미션:
-    - 유형: {request.todayMission.missionType.value}
-    - 난이도: {request.todayMission.difficulty}
-    - 결과: {request.todayMission.result.value}{f' (실패 사유: {request.todayMission.failureReason})' if request.todayMission.failureReason else ''}
-    최근 요약:
-    - 성공 일수: {request.recentSummary.successDays}일
-    - 실패 일수: {request.recentSummary.failureDays}일
-
-    위 정보를 바탕으로 다음 내용을 분석하여 피드백을 제공해주세요.
-    1. 오늘 미션 수행 결과 및 최근 기록을 반영한 분석형 AI 피드백 문장을 생성해주세요.
-    2. 메인 화면에 표시할 격려/응원 메시지 후보 2~4개를 생성해주세요. 각 메시지는 'intent'(PRAISE, RETRY, NORMAL, PUSH 중 하나), 'title', 'message'를 포함해야 합니다.
-       - PRAISE: 잘하고 있을 때 칭찬 및 목표 상기.
-       - RETRY: 실패가 반복되거나 재도전이 필요할 때 격려.
-       - NORMAL: 보통일 때 목표 달성을 격려.
-       - PUSH: 행동을 촉구할 때.
-=======
     사용자 컨텍스트: {request.userContext.dict()}
     오늘 미션: {today_mission_text}
 
     위 정보를 바탕으로 다음 내용을 분석하여 피드백을 제공해주세요.
     1. 오늘 미션 수행 결과 및 최근 기록을 반영한 분석형 AI 피드백 문장을 생성해주세요. (feedbackText)
-    2. 메인 화면에 표시할 격려/응원 메시지 후보를 생성해주세요. 각 메시지는 'intent'(PRAISE, RETRY, NORMAL, PUSH), 'title', 'message'를 포함해야 합니다. (encouragementCandidates)
->>>>>>> Stashed changes
-=======
-    사용자 컨텍스트: {request.userContext.dict()}
-    오늘 미션: {request.todayMission.dict()}
-
-    위 정보를 바탕으로 다음 내용을 분석하여 피드백을 제공해주세요.
-    1. 오늘 미션 수행 결과 및 최근 기록을 반영한 분석형 AI 피드백 문장을 생성해주세요. (feedbackText)
     2. 메인 화면에 표시할 격려/응원 메시지 후보 2~4개를 생성해주세요. 각 메시지는 'intent'(PRAISE, RETRY, NORMAL, PUSH 중 하나), 'title', 'message'를 포함해야 합니다. (encouragementCandidates)
->>>>>>> a938970cd8a964e0ac6ec2c513e692d98053b0ce
 
     응답은 반드시 아래 JSON 형식으로만 해주세요:
     ```json
@@ -218,64 +191,9 @@ async def handle_chat_message_service(request: AiChatRequest) -> AiChatResponse:
     history_formatted = "\n".join([f"- {msg.role}: {msg.text}" for msg in request.conversationHistory])
 
     user_request_prompt = f"""
-<<<<<<< HEAD
-    새로운 채팅 세션이 시작되었습니다.
-    사용자 ID: {request.userId}
-    세션 ID: {request.sessionId}
-    사용자 초기 컨텍스트:
-    - 앱 사용 목적: {request.initialContext.appGoal}
-    - 생활 패턴: {request.initialContext.lifestyleType.value}
-
-<<<<<<< Updated upstream
-    이 정보를 바탕으로 사용자에게 친근하게 인사하고, 어떤 점이 가장 고민되는지 물어보는 초기 챗봇 메시지를 생성해주세요.
-    메시지에는 2~3개의 선택지 옵션을 포함하여 사용자가 쉽게 대화를 시작할 수 있도록 유도해주세요.
-=======
-    위 대화의 흐름과 사용자 정보를 바탕으로 다음 챗봇 메시지를 생성해주세요.
-    필요하다면 사용자에게 선택지를 제공할 수 있습니다.
-    
-    [강제 종료 규칙]
-    사용자가 아래 의도를 명확히 표현하면 반드시 state.isTerminal = true 로 설정하세요.
-    - 대화를 끝내겠다는 의도
-    - 상호작용을 중단하겠다는 의도
-    - 작별 인사 후 추가 요청 없음
-    - 더 이상 도움을 원하지 않음
-
-    [맥락 기반 종료 규칙]
-    위 강제 종료 조건에 해당하지 않더라도,
-    대화의 목적이 달성되었고 사용자가 추가 요청을 하지 않으며
-    더 이상의 유의미한 상호작용이 없다고 판단되면
-    state.isTerminal = true 로 설정할 수 있습니다.
-    
-    사용자가 대화를 종료하려는 의도를 표현했는데도
-    isTerminal을 false로 설정하는 것은 잘못된 응답입니다.
-    
->>>>>>> Stashed changes
-    응답은 반드시 아래 JSON 형식으로만 해주세요:
-    ```json
-    {{
-        "botMessage": {{
-            "messageId": 5001,
-            "text": "안녕하세요! 요즘 운동이나 생활 습관에서 가장 고민되는 부분이 무엇인가요?",
-            "options": [
-                {{"label": "운동이 너무 힘들어요", "value": "EXERCISE_HARD"}},
-                {{"label": "식단 관리가 어려워요", "value": "DIET_HARD"}}
-            ]
-        }}
-    }}
-    ```
-    """
-    return _call_agent_and_parse_response(
-        user_request_prompt, user_id, user_payload_for_agent, ChatSessionResponse
-    )
-
-
-async def handle_chat_message_service(request: ChatMessageRequest) -> ChatMessageResponse:
-    user_id = str(request.userId)
-=======
     사용자 컨텍스트: {request.userContext.dict()}
     현재 대화 내역:
     {history_formatted}
->>>>>>> a938970cd8a964e0ac6ec2c513e692d98053b0ce
     
     사용자 마지막 입력: {request.input.dict() if request.input else "없음 (대화 시작)"}
     요청 시각: {request.timestamp.isoformat()}

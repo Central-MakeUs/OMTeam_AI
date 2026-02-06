@@ -108,23 +108,23 @@ async def get_daily_feedback_service(request: AiDailyAnalysisRequest) -> AiDaily
     today_mission_text = (
         request.todayMission.dict()
         if request.todayMission is not None
-        else "오늘 미션 기록 없음"
+        else "해당 날짜의 미션 기록 없음"
     )
     
     user_request_prompt = f"""
     사용자 ID: {request.userId}
     분석 대상 날짜: {request.targetDate.isoformat()}
     사용자 컨텍스트: {request.userContext.dict()}
-    오늘 미션: {today_mission_text}
+    해당 날짜의 미션: {today_mission_text}
 
     위 정보를 바탕으로 다음 내용을 분석하여 피드백을 제공해주세요.
-    1. 오늘 미션 수행 결과 및 최근 기록을 반영한 분석형 AI 피드백 문장을 생성해주세요. (feedbackText)
-    2. 메인 화면에 표시할 격려/응원 메시지 후보 2~4개를 생성해주세요. 각 메시지는 'intent'(PRAISE, RETRY, NORMAL, PUSH 중 하나), 'title', 'message'를 포함해야 합니다. (encouragementCandidates)
+    1. 해당 날짜의 미션 수행 결과 및 최근 기록을 반영한 분석형 AI 피드백 문장을 생성해주세요. (feedbackText)
+    2. 메인 화면에 표시할 격려/응원 메시지 후보를 생성해주세요. 각 메시지는 'intent'(PRAISE, RETRY, NORMAL, PUSH), 'title', 'message'를 포함해야 합니다. (encouragementCandidates)
 
     응답은 반드시 아래 JSON 형식으로만 해주세요:
     ```json
     {{
-        "feedbackText": "오늘은 시간 부족으로 미션을 완료하지 못했어요. 최근에도 꾸준히 시도하고 있으니, 부담을 줄여 짧은 미션부터 다시 시작해보는 걸 추천해요.",
+        "feedbackText": "시간 부족으로 미션을 완료하지 못했어요. 최근에도 꾸준히 시도하고 있으니, 부담을 줄여 짧은 미션부터 다시 시작해보는 걸 추천해요.",
         "encouragementCandidates": [
             {{
                 "intent": "PRAISE",

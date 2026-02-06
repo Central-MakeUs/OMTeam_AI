@@ -11,7 +11,7 @@ class UserContext(BaseModel):
     recentMissionSuccessRate: float
     currentLevel: int
     successCount: int
-    preferredExercise: str
+    preferredExercises: List[str]
     lifestyleType: str
 
 # --- /ai/missions/daily Models ---

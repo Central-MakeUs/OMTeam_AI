@@ -77,8 +77,13 @@ class RecentSummaryData(BaseModel):
 class DailyFeedbackRequest(BaseModel):
     userId: int
     targetDate: date
+<<<<<<< Updated upstream
     todayMission: TodayMissionData
     recentSummary: RecentSummaryData
+=======
+    userContext: UserContext
+    todayMission: Optional[TodayMission] = None
+>>>>>>> Stashed changes
 
 class EncouragementCandidate(BaseModel):
     intent: Intent
@@ -94,10 +99,19 @@ class WeekRangeData(BaseModel):
     start: date
     end: date
 
+<<<<<<< Updated upstream
 class WeeklyStatsData(BaseModel):
     totalDays: int
     successDays: int
     failureDays: int
+=======
+class DailyResultSummary(BaseModel):
+    date: date
+    dayOfWeek: str # 'MONDAY' ~ 'SUNDAY'
+    status: str
+    missionType: Optional[str] = None
+    failureReason: Optional[str] = None
+>>>>>>> Stashed changes
 
 class FailureReasonRankedItem(BaseModel):
     reason: str

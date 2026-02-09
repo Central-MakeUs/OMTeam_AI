@@ -69,7 +69,8 @@ async def get_daily_missions_service(request: AiMissionRecommendRequest) -> AiMi
     최근 미션 이력: {[h.dict() for h in request.recentMissionHistory]}
     주간 주요 실패 원인: {request.weeklyFailureReasons}
 
-    위 정보를 바탕으로 사용자에게 오늘 수행할 데일리 추천 미션 2~3개를 추천해주세요.
+    위 정보를 바탕으로 사용자에게 오늘 수행할 데일리 추천 미션 3개를 추천해주세요.
+    미션 이름은 최대 20자 입니다.
     미션은 EXERCISE 또는 DIET 유형으로 구성될 수 있습니다.
     난이도는 1이상 5이하 정수로 표현합니다.
     각 미션에 대해 예상 소요 시간(분)과 예상 소모 칼로리(kcal)를 함께 알려주세요.
